@@ -9,8 +9,9 @@ import requests
 # Some defaults
 DOMAINS = ['http://atlanta.craigslist.org']
 OUTFILE = 'test.csv'
-EARLIEST_TIME = dt.datetime.now() + dt.timedelta(hours=1)
-LATEST_TIME = dt.datetime.now() + dt.timedelta(hours=3)
+# These timestamps will be interpreted locally to the listing location
+EARLIEST_TS = dt.datetime.now() - dt.timedelta(hours=1)
+LATEST_TS = dt.datetime.now()
 
 
 class RentalListingScraper(object):
@@ -19,13 +20,13 @@ class RentalListingScraper(object):
 			self, 
 			domains = DOMAINS, 
 			outfile = OUTFILE,
-			earliest_time = EARLIEST_TIME,
-			latest_time = LATEST_TIME):
+			earliest_ts = EARLIEST_TS,
+			latest_ts = LATEST_TS):
 		
 		self.domains = domains
 		self.outfile = outfile
-		self.earliest_time = earliest_time
-		self.latest_time = latest_time
+		self.earliest_ts = earliest_ts
+		self.latest_ts = latest_ts
 
 
 	def _get_str(self, list):
@@ -53,9 +54,8 @@ class RentalListingScraper(object):
 				
 		return 0
 		
-	
 
-	def _readFromListing(self, item):
+	def _parseListing(self, item):
 		'''
 		Note that xpath() returns a list with elements of varying types depending on the
 		query results: xml objects, strings, etc.
@@ -68,7 +68,7 @@ class RentalListingScraper(object):
 		line2 = item.xpath('span[@class="txt"]/span[@class="l2"]')[0]
 	
 		dt = line1.xpath('time/@datetime')[0]  # always present
-		url = 'http://craigslist.org' + line1.xpath('a/@href')[0]  # always present
+		url = line1.xpath('a/@href')[0]  # always present
 		title = self._get_str(line1.xpath('a/span/text()'))
 	
 		price = self._get_str(line2.xpath('span[@class="price"]/text()')).strip('$')
@@ -81,8 +81,29 @@ class RentalListingScraper(object):
 		return [pid, dt, url, title, price, neighb, beds, sqft]
 
 	
+	def _scrapeLatLng(self, url):
+	
+		page = requests.get(url)
+		tree = html.fromstring(page.content)
+		
+		map = tree.xpath('//div[@id="map"]')
+
+		# Sometimes there's no location info, and no map on the page		
+		if len(map) == 0:
+			return ['', '', '', '']
+
+		map = map[0]
+		lat = map.xpath('@data-latitude')[0]
+		lng = map.xpath('@data-longitude')[0]
+		accuracy = map.xpath('@data-accuracy')[0]
+		address = self._get_str(tree.xpath('//p[@class="mapaddress"]/small/a/@href'))
+		
+		return [lat, lng, accuracy, address]
+		
+	
 	def run(self):
 		
+		# Loop over each regional Craigslist URL
 		for domain in self.domains:
 
 			page = requests.get(domain + '/search/apa')
@@ -92,16 +113,18 @@ class RentalListingScraper(object):
 			listings = tree.xpath('//p[@class="row"]')
 
 			for item in listings:
-				r = self._readFromListing(item)
+				r = self._parseListing(item)
 				ts = dt.datetime.strptime(r[1], '%Y-%m-%d %H:%M')
-				print ts
 				
-				if (ts > self.latest_time):
+				if (ts > self.latest_ts):
 					print "too late"
 					
-				if (ts < self.earliest_time):
+				if (ts < self.earliest_ts):
 					print "too early"
 					break
+					
+				self._scrapeLatLng(domain + r[2])
+		
 				# add source when saving
 				
 				

@@ -3,6 +3,7 @@ __date__ = "May 4, 2016"
 
 # This is a test script for the rental listing scraper
 
+import datetime as dt
 
 # add subfolder to system path
 import sys
@@ -15,6 +16,8 @@ domains = ['http://atlanta.craigslist.org']
 
 s = scraper2.RentalListingScraper(
 		domains = domains,
-		outfile = 'test.csv')
+		outfile = 'test.csv',
+		earliest_ts = dt.datetime.now() + dt.timedelta(hours=1),
+		latest_ts = dt.datetime.now() + dt.timedelta(hours=3))
 
 s.run()
