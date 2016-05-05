@@ -121,48 +121,48 @@ class RentalListingScraper(object):
 	def run(self):
 	
 		colnames = ['pid','dt','url','title','price','neighb','beds','sqft',
-						'lat','lng','accuracy','address']		
-		data = []
-		
-		# Loop over each regional Craigslist URL
-		for domain in self.domains:
+						'lat','lng','accuracy','address']
 
-			page = requests.get(domain + '/search/apa')
-			tree = html.fromstring(page.content)
-
-			# Each listing on the search results page is labeled as <p class="row">
-			listings = tree.xpath('//p[@class="row"]')
-
-			for item in listings:
-				r = self._parseListing(item)
-				ts = dt.datetime.strptime(r[1], '%Y-%m-%d %H:%M')
-				
-				if (ts > self.latest_ts):
-					print "too late"
-					break  # ?
-					
-				if (ts < self.earliest_ts):
-					print "too early"
-					break  # AND DONT GO TO THE NEXT PAGE
-					
-				r[2] = domain + r[2]  # Insert regional Craigslist domain
-				r += self._scrapeLatLng(r[2])
-				
-				data.append(r)
-						
-				
-				
-			# Go to the next search results page
-			
 		with open(self.outfile, 'wb') as f:
 			writer = csv.writer(f)
 			writer.writerow(colnames)
-			writer.writerows(data)
+
+			# Loop over each regional Craigslist URL
+			for domain in self.domains:
+			
+				regionIsComplete = False
+				page = requests.get(domain + '/search/apa')  # Initial page of search results
 				
+				while not regionIsComplete:
+					tree = html.fromstring(page.content)
+					# Each listing on the search results page is labeled as <p class="row">
+					listings = tree.xpath('//p[@class="row"]')
+
+					for item in listings:
+						row = self._parseListing(item)
+						ts = dt.datetime.strptime(row[1], '%Y-%m-%d %H:%M')
+				
+						if (ts > self.latest_ts):
+							# Skip this row, but continue searching the same region
+							break
+					
+						if (ts < self.earliest_ts):
+							# Move on to the next region
+							regionIsComplete = True
+							break 
+					
+						row[2] = domain + row[2]  # Insert regional Craigslist domain
+						row += self._scrapeLatLng(row[2])
+				
+						writer.writerow(row)
+						
+					# Go to the next search results page
+					next = tree.xpath('//a[@title="next page"]/@href')
+					if len(next) > 0:
+						page = requests.get(domain + next[0])
+					else:
+						regionIsComplete = True
+							
 		return
-
-
-
-# stop traversing pages if post id is too old? - or only keep prev calendar day?
 
 

@@ -17,7 +17,7 @@ domains = ['http://atlanta.craigslist.org']
 s = scraper2.RentalListingScraper(
 		domains = domains,
 		outfile = 'data/test.csv',
-		earliest_ts = dt.datetime.now() + dt.timedelta(hours=1),
+		earliest_ts = dt.datetime.now(),
 		latest_ts = dt.datetime.now() + dt.timedelta(hours=3))
 
 s.run()
