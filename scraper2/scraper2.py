@@ -2,13 +2,16 @@ __author__ = "Sam Maurer, UrbanSim Inc"
 __date__ = "May 4, 2016"
 
 import datetime as dt
+import urllib
+import csv
 from lxml import html
 import requests
 
 
-# Some defaults
+# Some defaults, which can be overridden when the class is called
+
 DOMAINS = ['http://atlanta.craigslist.org']
-OUTFILE = 'test.csv'
+OUTFILE = 'data/test.csv'
 # These timestamps will be interpreted locally to the listing location
 EARLIEST_TS = dt.datetime.now() - dt.timedelta(hours=1)
 LATEST_TS = dt.datetime.now()
@@ -79,6 +82,20 @@ class RentalListingScraper(object):
 		sqft = self._get_int_prefix(bedsqft, "ft")  # appears as "000ft" or missing
 		
 		return [pid, dt, url, title, price, neighb, beds, sqft]
+		
+
+	def _parseAddress(self, tree):
+		'''
+		Some listings include an address, but we have to parse it out of an encoded
+		Google Maps url.
+		'''
+		url = self._get_str(tree.xpath('//p[@class="mapaddress"]/small/a/@href'))
+		
+		if '?q=loc' not in url:
+			# That string precedes an address search
+			return ''
+			
+		return urllib.unquote_plus(url.split('?q=loc')[1]).strip(' :')
 
 	
 	def _scrapeLatLng(self, url):
@@ -96,12 +113,16 @@ class RentalListingScraper(object):
 		lat = map.xpath('@data-latitude')[0]
 		lng = map.xpath('@data-longitude')[0]
 		accuracy = map.xpath('@data-accuracy')[0]
-		address = self._get_str(tree.xpath('//p[@class="mapaddress"]/small/a/@href'))
+		address = self._parseAddress(tree)
 		
 		return [lat, lng, accuracy, address]
 		
 	
 	def run(self):
+	
+		colnames = ['pid','dt','url','title','price','neighb','beds','sqft',
+						'lat','lng','accuracy','address']		
+		data = []
 		
 		# Loop over each regional Craigslist URL
 		for domain in self.domains:
@@ -118,20 +139,25 @@ class RentalListingScraper(object):
 				
 				if (ts > self.latest_ts):
 					print "too late"
+					break  # ?
 					
 				if (ts < self.earliest_ts):
 					print "too early"
-					break
+					break  # AND DONT GO TO THE NEXT PAGE
 					
-				self._scrapeLatLng(domain + r[2])
-		
-				# add source when saving
+				r[2] = domain + r[2]  # Insert regional Craigslist domain
+				r += self._scrapeLatLng(r[2])
 				
+				data.append(r)
+						
 				
 				
 			# Go to the next search results page
 			
-			
+		with open(self.outfile, 'wb') as f:
+			writer = csv.writer(f)
+			writer.writerow(colnames)
+			writer.writerows(data)
 				
 		return
 
