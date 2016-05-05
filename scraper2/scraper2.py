@@ -3,7 +3,7 @@ __date__ = "May 4, 2016"
 
 import datetime as dt
 import urllib
-import csv
+import unicodecsv as csv
 from lxml import html
 import requests
 
