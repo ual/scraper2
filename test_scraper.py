@@ -1,9 +1,10 @@
 __author__ = "Sam Maurer, UrbanSim Inc"
-__date__ = "May 4, 2016"
+__date__ = "May 6, 2016"
 
 # This is a test script for the rental listing scraper
 
-import datetime as dt
+from datetime import datetime as dt
+from datetime import timedelta
 
 # add subfolder to system path
 import sys
@@ -16,7 +17,7 @@ domains = ['http://atlanta.craigslist.org']
 
 s = scraper2.RentalListingScraper(
 		domains = domains,
-		earliest_ts = dt.datetime.now() + dt.timedelta(hours=2),
-		latest_ts = dt.datetime.now() + dt.timedelta(hours=3))
+		earliest_ts = dt.now() + timedelta(hours=2),
+		latest_ts = dt.now() + timedelta(hours=3))
 
 s.run()

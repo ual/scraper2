@@ -1,7 +1,9 @@
 __author__ = "Sam Maurer, UrbanSim Inc"
-__date__ = "May 4, 2016"
+__date__ = "May 6, 2016"
 
-import datetime as dt
+from datetime import datetime as dt
+from datetime import timedelta
+import logging
 import urllib
 import unicodecsv as csv
 from lxml import html
@@ -15,8 +17,8 @@ DOMAINS = ['http://sfbay.craigslist.org']  # List of regional domains to search
 # Craigslist doesn't use time zones in its timestamps, so these cutoffs will be
 # interpreted relative to the local time at the listing location. For example, dt.now()
 # run from a machine in San Francisco will match listings from 3 hours ago in Boston.
-EARLIEST_TS = dt.datetime.now() - dt.timedelta(hours=0.25)
-LATEST_TS = dt.datetime.now()
+EARLIEST_TS = dt.now() - timedelta(hours=0.25)
+LATEST_TS = dt.now()
 
 OUT_DIR = 'data/'
 FNAME_BASE = 'data-'  # filename prefix (timestamp and filetype extension will be appended)
@@ -43,6 +45,11 @@ class RentalListingScraper(object):
 		self.fname_base = fname_base
 		self.s3_upload = s3_upload
 		self.s3_bucket = s3_bucket
+		
+		self.ts = dt.now().strftime('%Y%m%d-%H%M%S')  # Use as id for outfile and logfile
+		logging.basicConfig(filename='logs/' + self.ts + '.log', level=logging.INFO)
+		# Suppress info messages from the 'requests' library
+		logging.getLogger('requests').setLevel(logging.WARNING)  
 
 
 	def _get_str(self, list):
@@ -136,15 +143,15 @@ class RentalListingScraper(object):
 		colnames = ['pid','dt','url','title','price','neighb','beds','sqft',
 						'lat','lng','accuracy','address']
 
-		fname = self.out_dir + self.fname_base + dt.datetime.now().strftime('%Y%m%d-%H%M%S') + '.csv'
+		fname = self.out_dir + self.fname_base + self.ts + '.csv'
 		with open(fname, 'wb') as f:
 			writer = csv.writer(f)
 			writer.writerow(colnames)
 
 			# Loop over each regional Craigslist URL
 			for domain in self.domains:	
-			
 				regionIsComplete = False
+				logging.info('BEGINNING SEARCH OF ' + domain )
 				page = requests.get(domain + '/search/apa')  # Initial page of search results
 				
 				while not regionIsComplete:
@@ -155,7 +162,7 @@ class RentalListingScraper(object):
 					for item in listings:
 						try:
 							row = self._parseListing(item)
-							item_ts = dt.datetime.strptime(row[1], '%Y-%m-%d %H:%M')
+							item_ts = dt.strptime(row[1], '%Y-%m-%d %H:%M')
 				
 							if (item_ts > self.latest_ts):
 								# Skip this item but continue parsing search results
@@ -174,13 +181,14 @@ class RentalListingScraper(object):
 						except Exception, e:
 							# Catch any problems parsing a listing
 							if len(row) > 0:
-								print item_url
-							print "%s: %s" % (type(e).__name__, e)
+								logging.info('ERROR PARSING ' + item_url)
+							logging.info("%s: %s" % (type(e).__name__, e))
 							continue
 						
 					# Go to the next search results page
 					next = tree.xpath('//a[@title="next page"]/@href')
 					if len(next) > 0:
+						logging.info(domain + next[0])
 						page = requests.get(domain + next[0])
 					else:
 						regionIsComplete = True
