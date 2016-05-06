@@ -40,8 +40,7 @@ domains = [
 
 s = scraper2.RentalListingScraper(
 		domains = domains,
-		outfile = 'data/test2.csv',
-		earliest_ts = dt.datetime.now() - dt.timedelta(hours=1),
+		earliest_ts = dt.datetime.now() - dt.timedelta(hours=0.25),
 		latest_ts = dt.datetime.now())
 
 s.run()

@@ -10,26 +10,39 @@ import requests
 
 # Some defaults, which can be overridden when the class is called
 
-DOMAINS = ['http://atlanta.craigslist.org']
-OUTFILE = 'data/test.csv'
-# These timestamps will be interpreted locally to the listing location
-EARLIEST_TS = dt.datetime.now() - dt.timedelta(hours=1)
+DOMAINS = ['http://sfbay.craigslist.org']  # List of regional domains to search
+
+# Craigslist doesn't use time zones in its timestamps, so these cutoffs will be
+# interpreted relative to the local time at the listing location. For example, dt.now()
+# run from a machine in San Francisco will match listings from 3 hours ago in Boston.
+EARLIEST_TS = dt.datetime.now() - dt.timedelta(hours=0.25)
 LATEST_TS = dt.datetime.now()
+
+OUT_DIR = 'data/'
+FNAME_BASE = 'data-'  # filename prefix (timestamp and filetype extension will be appended)
+S3_UPLOAD = False
+S3_BUCKET = 'scraper2'
 
 
 class RentalListingScraper(object):
 
 	def __init__(
 			self, 
-			domains = DOMAINS, 
-			outfile = OUTFILE,
+			domains = DOMAINS,
 			earliest_ts = EARLIEST_TS,
-			latest_ts = LATEST_TS):
+			latest_ts = LATEST_TS, 
+			out_dir = OUT_DIR,
+			fname_base = FNAME_BASE,
+			s3_upload = S3_UPLOAD,
+			s3_bucket = S3_BUCKET):
 		
 		self.domains = domains
-		self.outfile = outfile
 		self.earliest_ts = earliest_ts
 		self.latest_ts = latest_ts
+		self.out_dir = out_dir
+		self.fname_base = fname_base
+		self.s3_upload = s3_upload
+		self.s3_bucket = s3_bucket
 
 
 	def _get_str(self, list):
@@ -123,12 +136,13 @@ class RentalListingScraper(object):
 		colnames = ['pid','dt','url','title','price','neighb','beds','sqft',
 						'lat','lng','accuracy','address']
 
-		with open(self.outfile, 'wb') as f:
+		fname = self.out_dir + self.fname_base + dt.datetime.now().strftime('%Y%m%d-%H%M%S') + '.csv'
+		with open(fname, 'wb') as f:
 			writer = csv.writer(f)
 			writer.writerow(colnames)
 
 			# Loop over each regional Craigslist URL
-			for domain in self.domains:
+			for domain in self.domains:	
 			
 				regionIsComplete = False
 				page = requests.get(domain + '/search/apa')  # Initial page of search results
@@ -139,22 +153,30 @@ class RentalListingScraper(object):
 					listings = tree.xpath('//p[@class="row"]')
 
 					for item in listings:
-						row = self._parseListing(item)
-						ts = dt.datetime.strptime(row[1], '%Y-%m-%d %H:%M')
+						try:
+							row = self._parseListing(item)
+							item_ts = dt.datetime.strptime(row[1], '%Y-%m-%d %H:%M')
 				
-						if (ts > self.latest_ts):
-							# Skip this row, but continue searching the same region
-							break
+							if (item_ts > self.latest_ts):
+								# Skip this item but continue parsing search results
+								continue  
 					
-						if (ts < self.earliest_ts):
-							# Move on to the next region
-							regionIsComplete = True
-							break 
+							if (item_ts < self.earliest_ts):
+								# Break out of loop and move on to the next region
+								regionIsComplete = True
+								break 
 					
-						row[2] = domain + row[2]  # Insert regional Craigslist domain
-						row += self._scrapeLatLng(row[2])
-				
-						writer.writerow(row)
+							item_url = domain + row[2]
+							row[2] = item_url
+							row += self._scrapeLatLng(item_url)				
+							writer.writerow(row)
+							
+						except Exception, e:
+							# Catch any problems parsing a listing
+							if len(row) > 0:
+								print item_url
+							print "%s: %s" % (type(e).__name__, e)
+							continue
 						
 					# Go to the next search results page
 					next = tree.xpath('//a[@title="next page"]/@href')
@@ -164,5 +186,14 @@ class RentalListingScraper(object):
 						regionIsComplete = True
 							
 		return
+
+
+
+
+
+
+
+
+
 
 
