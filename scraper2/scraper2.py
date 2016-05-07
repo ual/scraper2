@@ -21,7 +21,9 @@ EARLIEST_TS = dt.now() - timedelta(hours=0.25)
 LATEST_TS = dt.now()
 
 OUT_DIR = 'data/'
-FNAME_BASE = 'data-'  # filename prefix (timestamp and filetype extension will be appended)
+FNAME_BASE = 'data-'  # filename prefix for saved data
+FNAME_TS = True  # append timestamp to filename
+
 S3_UPLOAD = False
 S3_BUCKET = 'scraper2'
 
@@ -35,6 +37,7 @@ class RentalListingScraper(object):
 			latest_ts = LATEST_TS, 
 			out_dir = OUT_DIR,
 			fname_base = FNAME_BASE,
+			fname_ts = FNAME_TS,
 			s3_upload = S3_UPLOAD,
 			s3_bucket = S3_BUCKET):
 		
@@ -43,11 +46,15 @@ class RentalListingScraper(object):
 		self.latest_ts = latest_ts
 		self.out_dir = out_dir
 		self.fname_base = fname_base
+		self.fname_ts = fname_ts
 		self.s3_upload = s3_upload
 		self.s3_bucket = s3_bucket
 		
-		self.ts = dt.now().strftime('%Y%m%d-%H%M%S')  # Use as id for outfile and logfile
-		logging.basicConfig(filename='logs/' + self.ts + '.log', level=logging.INFO)
+		self.ts = dt.now().strftime('%Y%m%d-%H%M%S')  # Use timestamp as file id
+		log_fname = 'logs/' + self.fname_base \
+				+ (self.ts if self.fname_ts else '') + '.log'
+		logging.basicConfig(filename=log_fname, level=logging.INFO)
+		
 		# Suppress info messages from the 'requests' library
 		logging.getLogger('requests').setLevel(logging.WARNING)  
 
@@ -143,7 +150,8 @@ class RentalListingScraper(object):
 		colnames = ['pid','dt','url','title','price','neighb','beds','sqft',
 						'lat','lng','accuracy','address']
 
-		fname = self.out_dir + self.fname_base + self.ts + '.csv'
+		fname = self.out_dir + self.fname_base \
+				+ (self.ts if self.fname_ts else '') + '.csv'
 		with open(fname, 'wb') as f:
 			writer = csv.writer(f)
 			writer.writerow(colnames)
@@ -151,14 +159,17 @@ class RentalListingScraper(object):
 			# Loop over each regional Craigslist URL
 			for domain in self.domains:	
 				regionIsComplete = False
-				logging.info('BEGINNING SEARCH OF ' + domain )
-				page = requests.get(domain + '/search/apa')  # Initial page of search results
+				search_url = domain
+				logging.info('BEGINNING NEW REGION')
 				
 				while not regionIsComplete:
+				
+					logging.info(search_url)
+					page = requests.get(search_url)
 					tree = html.fromstring(page.content)
 					# Each listing on the search results page is labeled as <p class="row">
 					listings = tree.xpath('//p[@class="row"]')
-
+					
 					for item in listings:
 						try:
 							row = self._parseListing(item)
@@ -171,28 +182,28 @@ class RentalListingScraper(object):
 							if (item_ts < self.earliest_ts):
 								# Break out of loop and move on to the next region
 								regionIsComplete = True
+								logging.info('REACHED TIMESTAMP CUTOFF')
 								break 
 					
-							item_url = domain + row[2]
+							item_url = domain.split('/search')[0] + row[2]
 							row[2] = item_url
-							row += self._scrapeLatLng(item_url)				
+							# Parse listing page to get lat-lng
+							logging.info(item_url)
+							row += self._scrapeLatLng(item_url)	
 							writer.writerow(row)
 							
 						except Exception, e:
-							# Catch any problems parsing a listing
-							if len(row) > 0:
-								logging.info('ERROR PARSING ' + item_url)
-							logging.info("%s: %s" % (type(e).__name__, e))
+							# Skip listing if there are problems parsing it
+							logging.warning("%s: %s" % (type(e).__name__, e))
 							continue
-						
-					# Go to the next search results page
+					
 					next = tree.xpath('//a[@title="next page"]/@href')
 					if len(next) > 0:
-						logging.info(domain + next[0])
-						page = requests.get(domain + next[0])
+						search_url = domain.split('/search')[0] + next[0]
 					else:
 						regionIsComplete = True
-							
+						logging.info('REACHED MAXIMUM SEARCH RESULTS')
+						
 		return
 
 

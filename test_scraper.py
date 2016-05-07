@@ -13,7 +13,7 @@ sys.path.insert(0, 'scraper2/')
 import scraper2
 
 
-domains = ['http://atlanta.craigslist.org']
+domains = ['http://atlanta.craigslist.org/search/apa']
 
 s = scraper2.RentalListingScraper(
 		domains = domains,
