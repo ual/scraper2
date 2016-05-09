@@ -16,6 +16,11 @@ The data is saved to a CSV file, and diagnostics and errors are saved to a log f
 `ClistRentScraper` only kept lat-lon coordinates, but Craigslist listings now also include a location accuracy indicator and an address or cross streets, when users have provided it. `Scraper2` saves this data for future analysis.
 
 
+### Status
+
+This project is on hold while we look into more official access to Craigslist data.
+
+
 ### Task list (higher priority)
 
 - Figure out what Craigslist's throttle thresholds are, and put rate limits into our scripts. On 5/6 they blocked my IP after requesting about 10,000 URLs over a few hours.
@@ -30,7 +35,7 @@ The data is saved to a CSV file, and diagnostics and errors are saved to a log f
 
 - Write unit tests.
 
-- Craiglist returns a maximum of 2500 search results per query, which in high-traffic regions is much less than a full day of listings. For example, it's approx 6 daytime hours in the "sfbay" region. Here are some options: (a) run the scraper once a day at midnight and accept that we are getting an incomplete sample (current approach), (b) run the scraper more frequently, (c) try switching to sub-region searches.
+- Craigslist returns a maximum of 2500 search results per query, which in high-traffic regions is much less than a full day of listings. For example, it's approx 6 daytime hours in the "sfbay" region. Here are some options: (a) run the scraper once a day at midnight and accept that we are getting an incomplete sample (current approach), (b) run the scraper more frequently, (c) try switching to sub-region searches.
 
 
 ### Task list (lower priority)
