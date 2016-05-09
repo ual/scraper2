@@ -1,8 +1,6 @@
 __author__ = "Sam Maurer, UrbanSim Inc"
 __date__ = "May 6, 2016"
 
-# This is a test script for the rental listing scraper
-
 from datetime import datetime as dt
 from datetime import date, time, timedelta
 

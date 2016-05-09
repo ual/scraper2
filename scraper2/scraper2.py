@@ -202,7 +202,7 @@ class RentalListingScraper(object):
 						search_url = domain.split('/search')[0] + next[0]
 					else:
 						regionIsComplete = True
-						logging.info('REACHED MAXIMUM SEARCH RESULTS')
+						logging.info('RECEIVED ERROR PAGE')
 						
 		return
 
