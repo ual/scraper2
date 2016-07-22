@@ -25,6 +25,8 @@ This project is on hold while we look into more official access to Craigslist da
 
 - Figure out what Craigslist's throttle thresholds are, and put rate limits into our scripts. On 5/6 they blocked my IP after requesting about 10,000 URLs over a few hours.
 
+- Add a filter to avoid requesting URLs for listings that we know from the results page are missing necessary variables like price or number of bedrooms.
+
 - Add docstrings and other proper code templating.
 
 - Deploy on Linux server.
