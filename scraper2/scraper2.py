@@ -8,6 +8,7 @@ import urllib
 import unicodecsv as csv
 from lxml import html
 import requests
+import time
 from requests.auth import HTTPProxyAuth
 
 # Some defaults, which can be overridden when the class is called
@@ -144,20 +145,31 @@ class RentalListingScraper(object):
         address = self._parseAddress(tree)
         
         return [lat, lng, accuracy, address]
-        
+
+
+    def charity_session(self, search_url):
+        with requests.Session() as s:
+            authenticator = '87783015bbe2d2f900e2f8be352c414a'
+            proxy_str = 'http://' + authenticator + '@' +'workdistribute.charityengine.com:20000'
+            s.proxies = {'http': proxy_str, 'https': proxy_str}
+            s.auth = HTTPProxyAuth(authenticator,'')
+            page = s.get(search_url, timeout=30)
+        return page
     
     def run(self):
     
         colnames = ['pid','dt','url','title','price','neighb','beds','sqft',
                         'lat','lng','accuracy','address']
+        st_time = time.time()
 
         # Loop over each regional Craigslist URL
-        for domain in self.domains:
+        for i,domain in enumerate(self.domains):
 
             regionName = domain.split('//')[1].split('.craigslist')[0]
             regionIsComplete = False
             search_url = domain
             logging.info('BEGINNING NEW REGION')
+
             print(regionName)
                 
             fname = self.out_dir + regionName + '-' \
@@ -178,13 +190,18 @@ class RentalListingScraper(object):
                     logging.info(search_url)
                     # -x, --proxy <[protocol://][user:password@]proxyhost[:port]>
                     requests.packages.urllib3.disable_warnings()
-                    s = requests.Session()
-                    authenticator = '87783015bbe2d2f900e2f8be352c414a'
-                    proxy_str = 'http://' + authenticator + '@' +'workdistribute.charityengine.com:20000'
-                    s.proxies = {'http': proxy_str, 'https': proxy_str}
-                    s.auth = HTTPProxyAuth(authenticator,'')
-                    page = s.get(search_url)
-                    tree = html.fromstring(page.content)
+
+                    try:
+                        page = self.charity_session(search_url)
+                    except requests.exceptions.Timeout:
+                        page = self.charity_session(search_url)
+
+                    try:
+                        tree = html.fromstring(page.content)
+                    except:
+                        page = self.charity_session(search_url)
+                        tree = html.fromstring(page.content)
+                        
                     listings = tree.xpath('//p[@class="row"]')
                     
                     for item in listings:
@@ -220,6 +237,16 @@ class RentalListingScraper(object):
                     else:
                         regionIsComplete = True
                         logging.info('RECEIVED ERROR PAGE')
+
+            end_time = time.time()
+            elapsed_time = end_time - st_time
+            time_per_domain = elapsed_time / (i + 1.0)
+            num_domains = len(self.domains)
+            domains_left = num_domains - (i + 1.0)
+            time_left = domains_left * time_per_domain
+            print("Took {0} seconds for {1} regions.".format(elapsed_time,i+1))
+            print("About {0} seconds left.".format(time_left))
+
                         
         return
 

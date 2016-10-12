@@ -14,7 +14,7 @@ __date__ = "May 6, 2016"
 
 domains = pd.read_csv('domains.txt', header=None, names=['domain'])
 domains = list(domains.domain)
-lookback = 2  # hours
+lookback = 1  # hours
 
 s = scraper2.RentalListingScraper(
     domains=domains,
