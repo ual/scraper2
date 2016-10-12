@@ -1,10 +1,10 @@
 # This is a test script for the rental listing scraper
 from datetime import datetime as dt
 from datetime import timedelta
-import pandas as pd
 import sys
 sys.path.insert(0, 'scraper2/')
 import scraper2
+import csv
 
 __author__ = "Sam Maurer, UrbanSim Inc"
 __date__ = "May 6, 2016"
@@ -12,8 +12,11 @@ __date__ = "May 6, 2016"
 
 # add subfolder to system path
 
-domains = pd.read_csv('domains.txt', header=None, names=['domain'])
-domains = list(domains.domain)
+domains = []
+with open('domains.txt', 'rb') as f:
+    for line in f.readlines():
+        domains.append((line.strip()))
+
 lookback = 1  # hours
 
 s = scraper2.RentalListingScraper(
