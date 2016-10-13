@@ -196,7 +196,6 @@ class RentalListingScraper(object):
                     s = requests.Session()
                     s.proxies = {'http': proxy_str, 'https': proxy_str}
                     s.auth = HTTPProxyAuth(authenticator,'')
-                    s.config['keep_alive'] = False
 
                     try:
                         page = s.get(search_url, timeout=30)
