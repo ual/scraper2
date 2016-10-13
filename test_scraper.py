@@ -24,4 +24,4 @@ s = scraper2.RentalListingScraper(
     earliest_ts=dt.now() - timedelta(hours=lookback),
     latest_ts=dt.now() + timedelta(hours=0))
 
-s.run()
+out = s.run()
