@@ -9,6 +9,7 @@ import unicodecsv as csv
 from lxml import html
 import requests
 import time
+import sys
 from requests.auth import HTTPProxyAuth
 
 # Some defaults, which can be overridden when the class is called
@@ -194,14 +195,22 @@ class RentalListingScraper(object):
                     try:
                         page = self.charity_session(search_url)
                     except requests.exceptions.Timeout:
-                        page = self.charity_session(search_url)
+                        try:
+                            page = self.charity_session(search_url)
+                        except:
+                            regionIsComplete = True
+                            logging.info('FAILED TO CONNECT.')
+                            continue
 
                     try:
                         tree = html.fromstring(page.content)
                     except:
-                        page = self.charity_session(search_url)
-                        tree = html.fromstring(page.content)
+                        regionIsComplete = True
+                        logging.info('FAILED TO PARSE HTML.')
+                        return page
+
                         
+
                     listings = tree.xpath('//p[@class="row"]')
                     
                     for item in listings:
