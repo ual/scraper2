@@ -191,23 +191,33 @@ class RentalListingScraper(object):
                     logging.info(search_url)
                     # -x, --proxy <[protocol://][user:password@]proxyhost[:port]>
                     requests.packages.urllib3.disable_warnings()
+                    authenticator = '87783015bbe2d2f900e2f8be352c414a'
+                    proxy_str = 'http://' + authenticator + '@' +'workdistribute.charityengine.com:20000'
+                    s = requests.Session()
+                    s.proxies = {'http': proxy_str, 'https': proxy_str}
+                    s.auth = HTTPProxyAuth(authenticator,'')
+                    s.config['keep_alive'] = False
 
                     try:
-                        page = self.charity_session(search_url)
+                        page = s.get(search_url, timeout=30)
                     except requests.exceptions.Timeout:
+                        s = requests.Session()
+                        s.proxies = {'http': proxy_str, 'https': proxy_str}
+                        s.auth = HTTPProxyAuth(authenticator,'')
+                        s.config['keep_alive'] = False
                         try:
-                            page = self.charity_session(search_url)
+                            page = s.get(search_url, timeout=30)
                         except:
                             regionIsComplete = True
                             logging.info('FAILED TO CONNECT.')
-                            continue
+                            return s.get(search_url, timeout=30)
 
                     try:
                         tree = html.fromstring(page.content)
                     except:
                         regionIsComplete = True
                         logging.info('FAILED TO PARSE HTML.')
-                        return page
+                        return page.content
 
                         
 
