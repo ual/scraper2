@@ -403,7 +403,7 @@ http://capecod.craigslist.org/search/apa
 http://southcoast.craigslist.org/search/apa
 http://westernmass.craigslist.org/search/apa
 http://worcester.craigslist.org/search/apa
-http://burlington.craigslist.org/search/apa
+http://vermont.craigslist.org/search/apa
 http://nh.craigslist.org/search/apa
 http://maine.craigslist.org/search/apa
 http://anchorage.craigslist.org/search/apa

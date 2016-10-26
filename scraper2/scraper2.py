@@ -172,7 +172,7 @@ class RentalListingScraper(object):
             logging.info('BEGINNING NEW REGION')
 
             print(regionName)
-                
+
             fname = self.out_dir + regionName + '-' \
                 + (self.ts if self.fname_ts else '') + '.csv'
 
@@ -181,7 +181,7 @@ class RentalListingScraper(object):
                 writer.writerow(colnames)
 
                 while not regionIsComplete:
-                        
+
                     # logging.info(search_url)
                     # page = requests.get(search_url)
                     # tree = html.fromstring(page.content)
@@ -196,7 +196,7 @@ class RentalListingScraper(object):
                     s = requests.Session()
                     s.proxies = {'http': proxy_str, 'https': proxy_str}
                     s.auth = HTTPProxyAuth(authenticator,'')
-
+                    
                     try:
                         page = s.get(search_url, timeout=30)
                     except requests.exceptions.Timeout:
