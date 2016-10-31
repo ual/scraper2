@@ -147,17 +147,8 @@ class RentalListingScraper(object):
         
         return [lat, lng, accuracy, address]
 
-
-    def charity_session(self, search_url):
-        with requests.Session() as s:
-            authenticator = '87783015bbe2d2f900e2f8be352c414a'
-            proxy_str = 'http://' + authenticator + '@' +'workdistribute.charityengine.com:20000'
-            s.proxies = {'http': proxy_str, 'https': proxy_str}
-            s.auth = HTTPProxyAuth(authenticator,'')
-            page = s.get(search_url, timeout=30)
-        return page
     
-    def run(self):
+    def run(self, charity_proxy=True):
     
         colnames = ['pid','dt','url','title','price','neighb','beds','sqft',
                         'lat','lng','accuracy','address']
@@ -189,20 +180,24 @@ class RentalListingScraper(object):
                     # listings = tree.xpath('//p[@class="row"]')
 
                     logging.info(search_url)
-                    # -x, --proxy <[protocol://][user:password@]proxyhost[:port]>
-                    requests.packages.urllib3.disable_warnings()
-                    authenticator = '87783015bbe2d2f900e2f8be352c414a'
-                    proxy_str = 'http://' + authenticator + '@' +'workdistribute.charityengine.com:20000'
-                    s = requests.Session()
-                    s.proxies = {'http': proxy_str, 'https': proxy_str}
-                    s.auth = HTTPProxyAuth(authenticator,'')
-                    
+
+                    if charity_proxy:
+                        requests.packages.urllib3.disable_warnings()
+                        authenticator = '87783015bbe2d2f900e2f8be352c414a'
+                        proxy_str = 'http://' + authenticator + '@' +'workdistribute.charityengine.com:20000'
+                        s = requests.Session()
+                        s.proxies = {'http': proxy_str, 'https': proxy_str}
+                        s.auth = HTTPProxyAuth(authenticator,'')
+                    else:
+                        s = requests.Session()
+
                     try:
                         page = s.get(search_url, timeout=30)
                     except requests.exceptions.Timeout:
                         s = requests.Session()
-                        s.proxies = {'http': proxy_str, 'https': proxy_str}
-                        s.auth = HTTPProxyAuth(authenticator,'')
+                        if charity_proxy:
+                            s.proxies = {'http': proxy_str, 'https': proxy_str}
+                            s.auth = HTTPProxyAuth(authenticator,'')
                         try:
                             page = s.get(search_url, timeout=30)
                         except:
