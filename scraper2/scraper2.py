@@ -11,6 +11,8 @@ import requests
 import time
 import sys
 from requests.auth import HTTPProxyAuth
+import pandas as pd
+import numpy as np
 
 # Some defaults, which can be overridden when the class is called
 
@@ -86,6 +88,11 @@ class RentalListingScraper(object):
                 return s.strip(label)
                 
         return 0
+
+
+    def _toFloat(string_value):
+        string_value = string_value.strip()
+        return np.float(string_value) if string_value else np.nan
         
 
     def _parseListing(self, item):
@@ -147,6 +154,59 @@ class RentalListingScraper(object):
         
         return [lat, lng, accuracy, address]
 
+
+    def clean_listings(self, filename):
+
+        converters = {'neighborhood':str, 
+              'title':str, 
+              'price':_toFloat, 
+              'bedrooms':_toFloat, 
+              'pid':str, 
+              'date':str, 
+              'link':str, 
+              'sqft':_toFloat, 
+              'sourcepage':str, 
+              'longitude':_toFloat, 
+              'latitude':_toFloat}
+
+        all_listings = pd.read_csv(filename, converters=converters)
+        all_listings = all_listings.rename(columns={'price':'rent'})
+        all_listings['rent_sqft'] = all_listings['rent'] / all_listings['sqft']
+        all_listings['date'] = pd.to_datetime(all_listings['date'], format='%Y-%m-%d')
+        all_listings['day_of_week'] = all_listings['date'].apply(lambda x: x.weekday())
+        all_listings['region'] = all_listings['link'].str.extract('http://(.*).craigslist.org', expand=False)
+        unique_listings = pd.DataFrame(all_listings.drop_duplicates(subset='pid', inplace=False))
+        # duplicate_listings = all_listings[~all_listings.index.isin(unique_listings.index)]
+        thorough_listings = pd.DataFrame(unique_listings)
+        thorough_listings = thorough_listings[thorough_listings['rent'] > 0]
+        thorough_listings = thorough_listings[thorough_listings['sqft'] > 0]
+        upper_percentile = 0.998
+        lower_percentile = 0.002
+        upper = int(len(thorough_listings) * upper_percentile)
+        lower = int(len(thorough_listings) * lower_percentile)
+        rent_sqft_sorted = thorough_listings['rent_sqft'].sort_values(ascending=True, inplace=False)
+        upper_rent_sqft = rent_sqft_sorted.iloc[upper]
+        lower_rent_sqft = rent_sqft_sorted.iloc[lower]
+        rent_sorted = thorough_listings['rent'].sort_values(ascending=True, inplace=False)
+        upper_rent = rent_sorted.iloc[upper]
+        lower_rent = rent_sorted.iloc[lower]
+        sqft_sorted = thorough_listings['sqft'].sort_values(ascending=True, inplace=False)
+        upper_sqft = sqft_sorted.iloc[upper]
+        lower_sqft = sqft_sorted.iloc[lower]
+        rent_sqft_mask = (thorough_listings['rent_sqft'] > lower_rent_sqft) & (thorough_listings['rent_sqft'] < upper_rent_sqft)
+        rent_mask = (thorough_listings['rent'] > lower_rent) & (thorough_listings['rent'] < upper_rent)
+        sqft_mask = (thorough_listings['sqft'] > lower_sqft) & (thorough_listings['sqft'] < upper_sqft)
+        filtered_listings = pd.DataFrame(thorough_listings[rent_sqft_mask & rent_mask & sqft_mask])
+        #count_removed = len(thorough_listings) - len(filtered_listings)
+        geolocated_filtered_listings = pd.DataFrame(filtered_listings)
+        geolocated_filtered_listings = geolocated_filtered_listings[pd.notnull(geolocated_filtered_listings['latitude'])]
+        geolocated_filtered_listings = geolocated_filtered_listings[pd.notnull(geolocated_filtered_listings['longitude'])]
+        cols = ['pid', 'date', 'region', 'neighborhood', 'rent', 'bedrooms', 'sqft', 'rent_sqft', 
+        'rent_sqft_cat', 'longitude', 'latitude']
+        data_output = geolocated_filtered_listings[cols]
+        outfile = filename.split('.')[0] + 'filtered.csv'
+        data_output.to_csv('data/' + outfile, index=False)
+
     
     def run(self, charity_proxy=True):
     
@@ -161,8 +221,6 @@ class RentalListingScraper(object):
             regionIsComplete = False
             search_url = domain
             logging.info('BEGINNING NEW REGION')
-
-            print(regionName)
 
             fname = self.out_dir + regionName + '-' \
                 + (self.ts if self.fname_ts else '') + '.csv'
@@ -250,14 +308,14 @@ class RentalListingScraper(object):
                         regionIsComplete = True
                         logging.info('RECEIVED ERROR PAGE')
 
-            end_time = time.time()
-            elapsed_time = end_time - st_time
-            time_per_domain = elapsed_time / (i + 1.0)
-            num_domains = len(self.domains)
-            domains_left = num_domains - (i + 1.0)
-            time_left = domains_left * time_per_domain
-            print("Took {0} seconds for {1} regions.".format(elapsed_time,i+1))
-            print("About {0} seconds left.".format(time_left))
+            # end_time = time.time()
+            # elapsed_time = end_time - st_time
+            # time_per_domain = elapsed_time / (i + 1.0)
+            # num_domains = len(self.domains)
+            # domains_left = num_domains - (i + 1.0)
+            # time_left = domains_left * time_per_domain
+            # print("Took {0} seconds for {1} regions.".format(elapsed_time,i+1))
+            # print("About {0} seconds left.".format(time_left))
 
                         
         return
