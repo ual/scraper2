@@ -3,9 +3,13 @@ from datetime import datetime as dt
 from datetime import timedelta
 import time
 import sys
-sys.path.insert(0, 'scraper2/')
-import scraper2
+import os
 import multiprocessing
+import shutil
+import subprocess
+import glob
+sys.path.insert(0, '/home/mgardner/scraper2/scraper2')
+import scraper2
 
 
 __author__ = "Sam Maurer, UrbanSim Inc"
@@ -14,14 +18,17 @@ __date__ = "May 6, 2016"
 # add subfolder to system path
 
 domains = []
-with open('domains.txt', 'rb') as f:
+with open('/home/mgardner/scraper2/domains.txt', 'rb') as f:
     for line in f.readlines():
         domains.append((line.strip()))
 
-lookback = 2  # hours
+# domains = ['http://sfbay.craigslist.org/search/apa']
 
-earliest_ts = dt.now() - timedelta(hours=lookback)
-latest_ts = dt.now() + timedelta(hours=0)
+lookback = 1  # hours
+
+earliest_ts = dt.utcnow() - timedelta(hours=lookback)
+latest_ts = dt.utcnow() + timedelta(hours=0)
+ts = dt.now().strftime('%Y%m%d-%H%M%S')
 
 jobs = []
 
@@ -30,7 +37,8 @@ for domain in domains:
     s = scraper2.RentalListingScraper(
         domains=[domain],
         earliest_ts=earliest_ts,
-        latest_ts=latest_ts)
+        latest_ts=latest_ts,
+        fname_ts=ts)
     print 'Starting process for ' + domain
     p = multiprocessing.Process(target=s.run)
     jobs.append(p)
@@ -46,3 +54,16 @@ for i, job in enumerate(jobs):
     time_left = domains_left * time_per_domain
     print("Took {0} seconds for {1} regions.".format(elapsed_time, i + 1))
     print("About {0} seconds left.".format(time_left))
+
+# archive the data and delete the raw files
+print("Archiving data.")
+
+shutil.make_archive('/home/mgardner/scraper2/archives/rental_listings-' + ts,
+                    'zip', '/home/mgardner/scraper2/data')
+[os.remove(x) for x in glob.glob("/home/mgardner/scraper2/data/*" +
+                                 ts + ".csv")]
+
+# run the sync script to send the archive to box, delete local copy of archive
+p = subprocess.Popen(['. /home/mgardner/scraper2/sync_data.sh'], shell=True,
+                     stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+print("Done.")

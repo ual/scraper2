@@ -13,6 +13,12 @@ import sys
 from requests.auth import HTTPProxyAuth
 import pandas as pd
 import numpy as np
+import json
+import psycopg2
+import shutil
+import os
+import glob
+import subprocess
 
 # Some defaults, which can be overridden when the class is called
 
@@ -25,7 +31,7 @@ DOMAINS = ['http://sfbay.craigslist.org','http://modesto.craigslist.org/search/a
 EARLIEST_TS = dt.now() - timedelta(hours=0.25)
 LATEST_TS = dt.now()
 
-OUT_DIR = 'data/'
+OUT_DIR = '/home/mgardner/scraper2/data/'
 FNAME_BASE = 'data-'  # filename prefix for saved data
 FNAME_TS = True  # append timestamp to filename
 
@@ -54,9 +60,9 @@ class RentalListingScraper(object):
         self.fname_ts = fname_ts
         self.s3_upload = s3_upload
         self.s3_bucket = s3_bucket
-        
-        self.ts = dt.now().strftime('%Y%m%d-%H%M%S')  # Use timestamp as file id
-        log_fname = 'logs/' + self.fname_base \
+        self.ts = fname_ts  # Use timestamp as file id
+
+        log_fname = '/home/mgardner/scraper2/logs/' + self.fname_base \
                 + (self.ts if self.fname_ts else '') + '.log'
         logging.basicConfig(filename=log_fname, level=logging.INFO)
         
@@ -90,7 +96,7 @@ class RentalListingScraper(object):
         return 0
 
 
-    def _toFloat(string_value):
+    def _toFloat(self, string_value):
         string_value = string_value.strip()
         return np.float(string_value) if string_value else np.nan
         
@@ -100,23 +106,28 @@ class RentalListingScraper(object):
         Note that xpath() returns a list with elements of varying types depending on the
         query results: xml objects, strings, etc.
         '''
-    
         pid = item.xpath('@data-pid')[0]  # post id, always present
-    
-        # Extract two lines of listing info, always present
-        line1 = item.xpath('span[@class="txt"]/span[@class="pl"]')[0]
-        line2 = item.xpath('span[@class="txt"]/span[@class="l2"]')[0]
-    
-        dt = line1.xpath('time/@datetime')[0]  # always present
-        url = line1.xpath('a/@href')[0]  # always present
-        title = self._get_str(line1.xpath('a/span/text()'))
-    
-        price = self._get_str(line2.xpath('span[@class="price"]/text()')).strip('$')
-        neighb = self._get_str(line2.xpath('span[@class="pnr"]/small/text()')).strip(' ()')
-        bedsqft = self._get_str(line2.xpath('span[@class="housing"]/text()'))
-    
-        beds = self._get_int_prefix(bedsqft, "br")  # appears as "1br" to "8br" or missing
-        sqft = self._get_int_prefix(bedsqft, "ft")  # appears as "000ft" or missing
+        info = item.xpath('p[@class="result-info"]')[0]
+        dt = info.xpath('time/@datetime')[0]
+        url = info.xpath('a/@href')[0]
+        if type(info.xpath('a/text()')) == str:
+            title = info.xpath('a/text()')
+        else:
+            title = info.xpath('a/text()')[0]
+        price = self._get_str(info.xpath('span[@class="result-meta"]/span[@class="result-price"]/text()')).strip('$')
+        neighb_raw = info.xpath('span[@class="result-meta"]/span[@class="result-hood"]/text()')
+        if len(neighb_raw) == 0:
+            neighb = ''
+        else:
+            neighb = neighb_raw[0].strip(" ").strip("(").strip(")")
+        housing_raw = info.xpath('span[@class="result-meta"]/span[@class="housing"]/text()')
+        if len(housing_raw) == 0:
+            beds = 0
+            sqft = 0
+        else:
+            bedsqft = housing_raw[0]
+            beds = self._get_int_prefix(bedsqft, "br")  # appears as "1br" to "8br" or missing
+            sqft = self._get_int_prefix(bedsqft, "ft")  # appears as "000ft" or missing
         
         return [pid, dt, url, title, price, neighb, beds, sqft]
         
@@ -135,9 +146,17 @@ class RentalListingScraper(object):
         return urllib.unquote_plus(url.split('?q=loc')[1]).strip(' :')
 
     
-    def _scrapeLatLng(self, url):
+    def _scrapeLatLng(self, session, url, proxy=True):
     
-        page = requests.get(url)
+        s = session
+        # if proxy:
+        #     requests.packages.urllib3.disable_warnings()
+        #     authenticator = '87783015bbe2d2f900e2f8be352c414a'
+        #     proxy_str = 'http://' + authenticator + '@' +'workdistribute.charityengine.com:20000'
+        #     s.proxies = {'http': proxy_str, 'https': proxy_str}
+        #     s.auth = HTTPProxyAuth(authenticator,'') 
+
+        page = s.get(url, timeout=30)
         tree = html.fromstring(page.content)
         
         map = tree.xpath('//div[@id="map"]')
@@ -155,58 +174,93 @@ class RentalListingScraper(object):
         return [lat, lng, accuracy, address]
 
 
-    def clean_listings(self, filename):
+    def _get_fips(self, row):
 
-        converters = {'neighborhood':str, 
+            url = 'http://data.fcc.gov/api/block/find?format=json&latitude={}&longitude={}'
+            request = url.format(row['latitude'], row['longitude'])
+
+            # TO DO: exception handling
+            response = requests.get(request)
+            data = response.json()
+            return pd.Series({'fips_block':data['Block']['FIPS'], 'state':data['State']['code'], 'county':data['County']['name']})
+
+
+    def _clean_listings(self, filename):
+
+        converters = {'neighb':str, 
               'title':str, 
-              'price':_toFloat, 
-              'bedrooms':_toFloat, 
+              'price':self._toFloat, 
+              'beds':self._toFloat, 
               'pid':str, 
-              'date':str, 
-              'link':str, 
-              'sqft':_toFloat, 
+              'dt':str, 
+              'url':str, 
+              'sqft':self._toFloat, 
               'sourcepage':str, 
-              'longitude':_toFloat, 
-              'latitude':_toFloat}
+              'lng':self._toFloat, 
+              'lat':self._toFloat}
 
         all_listings = pd.read_csv(filename, converters=converters)
-        all_listings = all_listings.rename(columns={'price':'rent'})
+
+        if len(all_listings) == 0:
+            return []
+        # print('{0} total listings'.format(len(all_listings)))
+        all_listings = all_listings.rename(columns={'price':'rent', 'dt':'date', 'beds':'bedrooms', 'neighb':'neighborhood',
+                                                    'lng':'longitude', 'lat':'latitude'})
         all_listings['rent_sqft'] = all_listings['rent'] / all_listings['sqft']
         all_listings['date'] = pd.to_datetime(all_listings['date'], format='%Y-%m-%d')
         all_listings['day_of_week'] = all_listings['date'].apply(lambda x: x.weekday())
-        all_listings['region'] = all_listings['link'].str.extract('http://(.*).craigslist.org', expand=False)
+        all_listings['region'] = all_listings['url'].str.extract('http://(.*).craigslist.org', expand=False)
         unique_listings = pd.DataFrame(all_listings.drop_duplicates(subset='pid', inplace=False))
-        # duplicate_listings = all_listings[~all_listings.index.isin(unique_listings.index)]
         thorough_listings = pd.DataFrame(unique_listings)
         thorough_listings = thorough_listings[thorough_listings['rent'] > 0]
         thorough_listings = thorough_listings[thorough_listings['sqft'] > 0]
-        upper_percentile = 0.998
-        lower_percentile = 0.002
-        upper = int(len(thorough_listings) * upper_percentile)
-        lower = int(len(thorough_listings) * lower_percentile)
-        rent_sqft_sorted = thorough_listings['rent_sqft'].sort_values(ascending=True, inplace=False)
-        upper_rent_sqft = rent_sqft_sorted.iloc[upper]
-        lower_rent_sqft = rent_sqft_sorted.iloc[lower]
-        rent_sorted = thorough_listings['rent'].sort_values(ascending=True, inplace=False)
-        upper_rent = rent_sorted.iloc[upper]
-        lower_rent = rent_sorted.iloc[lower]
-        sqft_sorted = thorough_listings['sqft'].sort_values(ascending=True, inplace=False)
-        upper_sqft = sqft_sorted.iloc[upper]
-        lower_sqft = sqft_sorted.iloc[lower]
-        rent_sqft_mask = (thorough_listings['rent_sqft'] > lower_rent_sqft) & (thorough_listings['rent_sqft'] < upper_rent_sqft)
-        rent_mask = (thorough_listings['rent'] > lower_rent) & (thorough_listings['rent'] < upper_rent)
-        sqft_mask = (thorough_listings['sqft'] > lower_sqft) & (thorough_listings['sqft'] < upper_sqft)
-        filtered_listings = pd.DataFrame(thorough_listings[rent_sqft_mask & rent_mask & sqft_mask])
-        #count_removed = len(thorough_listings) - len(filtered_listings)
-        geolocated_filtered_listings = pd.DataFrame(filtered_listings)
+        if len(thorough_listings) == 0:
+            return []
+
+        # print('{0} thorough listings'.format(len(thorough_listings)))
+        geolocated_filtered_listings = pd.DataFrame(thorough_listings)
         geolocated_filtered_listings = geolocated_filtered_listings[pd.notnull(geolocated_filtered_listings['latitude'])]
         geolocated_filtered_listings = geolocated_filtered_listings[pd.notnull(geolocated_filtered_listings['longitude'])]
         cols = ['pid', 'date', 'region', 'neighborhood', 'rent', 'bedrooms', 'sqft', 'rent_sqft', 
-        'rent_sqft_cat', 'longitude', 'latitude']
+                'longitude', 'latitude']
         data_output = geolocated_filtered_listings[cols]
-        outfile = filename.split('.')[0] + 'filtered.csv'
-        data_output.to_csv('data/' + outfile, index=False)
 
+        # TO DO: exception handling for fips
+        fips = data_output.apply(self._get_fips, axis=1)             
+        geocoded = pd.concat([data_output, fips], axis=1)
+
+        # print('{0} geocoded listings'.format(len(geocoded)))
+        return geocoded
+
+    def _write_db(self, dataframe, domain):
+        dbname = 'craigslist'
+        host='localhost'
+        port=5432
+        username='mgardner'
+        passwd='craig'
+        conn_str = "dbname={0} user={1} host={2} password={3} port={4}".format(dbname,username,host,passwd,port)
+        conn = psycopg2.connect(conn_str)
+        cur = conn.cursor()
+        num_listings = len(dataframe)
+        print("Inserting {0} listings from {1} into database.".format(num_listings, domain))
+        prob_PIDs = []
+        for i,row in dataframe.iterrows():
+            try:
+                cur.execute('''INSERT INTO rental_listings
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                                (row['pid'],row['date'].to_datetime(),row['region'],row['neighborhood'],
+                                row['rent'],row['bedrooms'],row['sqft'],row['rent_sqft'],
+                                row['longitude'],row['latitude'],row['county'],
+                                row['fips_block'],row['state']))
+            except:
+                prob_PIDs.append(row['pid'])
+        conn.commit()
+        cur.close()
+        conn.close()
+        if len(prob_PIDs) > 0:
+            return prob_PIDs
+        else:
+            return 'OK'
     
     def run(self, charity_proxy=True):
     
@@ -231,23 +285,15 @@ class RentalListingScraper(object):
 
                 while not regionIsComplete:
 
-                    # logging.info(search_url)
-                    # page = requests.get(search_url)
-                    # tree = html.fromstring(page.content)
-                    # # Each listing on the search results page is labeled as <p class="row">
-                    # listings = tree.xpath('//p[@class="row"]')
-
                     logging.info(search_url)
+                    s = requests.Session()
 
                     if charity_proxy:
                         requests.packages.urllib3.disable_warnings()
                         authenticator = '87783015bbe2d2f900e2f8be352c414a'
                         proxy_str = 'http://' + authenticator + '@' +'workdistribute.charityengine.com:20000'
-                        s = requests.Session()
                         s.proxies = {'http': proxy_str, 'https': proxy_str}
                         s.auth = HTTPProxyAuth(authenticator,'')
-                    else:
-                        s = requests.Session()
 
                     try:
                         page = s.get(search_url, timeout=30)
@@ -257,24 +303,26 @@ class RentalListingScraper(object):
                             s.proxies = {'http': proxy_str, 'https': proxy_str}
                             s.auth = HTTPProxyAuth(authenticator,'')
                         try:
-                            page = s.get(search_url, timeout=30)
+                            page = s.get(search_url, timeout=30)    
                         except:
                             regionIsComplete = True
                             logging.info('FAILED TO CONNECT.')
-                            return s.get(search_url, timeout=30)
 
                     try:
                         tree = html.fromstring(page.content)
                     except:
                         regionIsComplete = True
                         logging.info('FAILED TO PARSE HTML.')
-                        return page.content
 
-                        
+                    listings = tree.xpath('//li[@class="result-row"]')
 
-                    listings = tree.xpath('//p[@class="row"]')
+                    ### TO DO: Need better way to check for HTML changes in Craigslist 
+                    if len(listings) == 0:
+                        logging.info('THEY CHANGED SOMETHING IN THE SYSTEM')
                     
+                    item_num = 0
                     for item in listings:
+                        item_num += 1
                         try:
                             row = self._parseListing(item)
                             item_ts = dt.strptime(row[1], '%Y-%m-%d %H:%M')
@@ -291,14 +339,15 @@ class RentalListingScraper(object):
                     
                             item_url = domain.split('/search')[0] + row[2]
                             row[2] = item_url
+
                             # Parse listing page to get lat-lng
                             logging.info(item_url)
-                            row += self._scrapeLatLng(item_url) 
+                            row += self._scrapeLatLng(s, item_url) 
                             writer.writerow(row)
-                            
+
                         except Exception, e:
                             # Skip listing if there are problems parsing it
-                            logging.warning("%s: %s" % (type(e).__name__, e))
+                            logging.warning("{0}: {1}. Probably no beds/sqft info".format(type(e).__name__, e))
                             continue
                     
                     next = tree.xpath('//a[@title="next page"]/@href')
@@ -308,16 +357,17 @@ class RentalListingScraper(object):
                         regionIsComplete = True
                         logging.info('RECEIVED ERROR PAGE')
 
-            # end_time = time.time()
-            # elapsed_time = end_time - st_time
-            # time_per_domain = elapsed_time / (i + 1.0)
-            # num_domains = len(self.domains)
-            # domains_left = num_domains - (i + 1.0)
-            # time_left = domains_left * time_per_domain
-            # print("Took {0} seconds for {1} regions.".format(elapsed_time,i+1))
-            # print("About {0} seconds left.".format(time_left))
+                    s.close()
 
-                        
+            # TO DO: exception handling
+            cleaned = self._clean_listings(fname)
+
+            if len(cleaned) > 0:
+                write = self._write_db(cleaned, domain)
+                if write is not 'OK':
+                    logging.info('FAILED TO WRITE THE FOLLOWING PIDS FOR {0}:'.format(domain) + ''.join(write))
+
+
         return
 
 
