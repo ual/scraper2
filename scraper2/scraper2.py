@@ -1,6 +1,4 @@
-__author__ = "Sam Maurer, UrbanSim Inc"
-__date__ = "May 6, 2016"
-
+from __future__ import division
 from datetime import datetime as dt
 from datetime import timedelta
 import logging
@@ -202,7 +200,7 @@ class RentalListingScraper(object):
         all_listings = pd.read_csv(filename, converters=converters)
 
         if len(all_listings) == 0:
-            return []
+            return [], 0, 0, 0
         # print('{0} total listings'.format(len(all_listings)))
         all_listings = all_listings.rename(columns={'price':'rent', 'dt':'date', 'beds':'bedrooms', 'neighb':'neighborhood',
                                                     'lng':'longitude', 'lat':'latitude'})
@@ -215,7 +213,7 @@ class RentalListingScraper(object):
         thorough_listings = thorough_listings[thorough_listings['rent'] > 0]
         thorough_listings = thorough_listings[thorough_listings['sqft'] > 0]
         if len(thorough_listings) == 0:
-            return []
+            return [], 0, 0, 0
 
         # print('{0} thorough listings'.format(len(thorough_listings)))
         geolocated_filtered_listings = pd.DataFrame(thorough_listings)
@@ -230,7 +228,7 @@ class RentalListingScraper(object):
         geocoded = pd.concat([data_output, fips], axis=1)
 
         # print('{0} geocoded listings'.format(len(geocoded)))
-        return geocoded
+        return geocoded, len(all_listings), len(thorough_listings), len(geocoded)
 
     def _write_db(self, dataframe, domain):
         dbname = 'craigslist'
@@ -242,8 +240,10 @@ class RentalListingScraper(object):
         conn = psycopg2.connect(conn_str)
         cur = conn.cursor()
         num_listings = len(dataframe)
-        print("Inserting {0} listings from {1} into database.".format(num_listings, domain))
+        # print("Inserting {0} listings from {1} into database.".format(num_listings, domain))
         prob_PIDs = []
+        dupes = []
+        writes = []
         for i,row in dataframe.iterrows():
             try:
                 cur.execute('''INSERT INTO rental_listings
@@ -252,15 +252,18 @@ class RentalListingScraper(object):
                                 row['rent'],row['bedrooms'],row['sqft'],row['rent_sqft'],
                                 row['longitude'],row['latitude'],row['county'],
                                 row['fips_block'],row['state']))
-            except:
-                prob_PIDs.append(row['pid'])
-        conn.commit()
+                conn.commit()
+                writes.append(row['pid'])
+            except Exception, e:
+                if 'duplicate key value violates unique' in str(e):
+                    dupes.append(row['pid'])
+                else:
+                    prob_PIDs.append(row['pid'])
+                conn.rollback()
+                
         cur.close()
         conn.close()
-        if len(prob_PIDs) > 0:
-            return prob_PIDs
-        else:
-            return 'OK'
+        return prob_PIDs, dupes, writes
     
     def run(self, charity_proxy=True):
     
@@ -270,6 +273,10 @@ class RentalListingScraper(object):
 
         # Loop over each regional Craigslist URL
         for i,domain in enumerate(self.domains):
+
+            total_listings = 0
+            listing_num = 0
+            ts_skipped = 0
 
             regionName = domain.split('//')[1].split('.craigslist')[0]
             regionIsComplete = False
@@ -317,24 +324,31 @@ class RentalListingScraper(object):
                     listings = tree.xpath('//li[@class="result-row"]')
 
                     ### TO DO: Need better way to check for HTML changes in Craigslist 
-                    if len(listings) == 0:
-                        logging.info('THEY CHANGED SOMETHING IN THE SYSTEM')
+                    if len(listings) == 0 and total_listings == 0:
+                        logging.info('NO LISTINGS RETRIEVED FOR {0}'.format(str.upper(regionName)))
+
+                    total_listings += len(listings)
                     
-                    item_num = 0
+
                     for item in listings:
-                        item_num += 1
+                        listing_num += 1
                         try:
                             row = self._parseListing(item)
                             item_ts = dt.strptime(row[1], '%Y-%m-%d %H:%M')
                 
                             if (item_ts > self.latest_ts):
                                 # Skip this item but continue parsing search results
+                                ts_skipped += 1
                                 continue
 
                             if (item_ts < self.earliest_ts):
                                 # Break out of loop and move on to the next region
+                                if listing_num == 1:
+                                    logging.info('NO LISTINGS BEFORE TIMESTAMP CUTOFF AT {0}'.format(str.upper(regionName)))    
+                                else:
+                                    logging.info('REACHED TIMESTAMP CUTOFF')
+                                ts_skipped += 1
                                 regionIsComplete = True
-                                logging.info('REACHED TIMESTAMP CUTOFF')
                                 break 
                     
                             item_url = domain.split('/search')[0] + row[2]
@@ -358,15 +372,46 @@ class RentalListingScraper(object):
                         logging.info('RECEIVED ERROR PAGE')
 
                     s.close()
+            
+            # print ts_skipped
+
+            if ts_skipped == total_listings:
+                logging.info(('{0} TIMESTAMPS NOT MATCHING' +
+                             ' - CL: {1} vs. UAL: {2}.' +
+                             ' NO DATA SAVED.').format(
+                                 regionName,
+                                 str(item_ts),
+                                 str(self.latest_ts)))
+                continue
 
             # TO DO: exception handling
-            cleaned = self._clean_listings(fname)
+            cleaned, count_listings, count_thorough, count_geocoded = self._clean_listings(fname)
+            num_cleaned = len(cleaned)
 
-            if len(cleaned) > 0:
-                write = self._write_db(cleaned, domain)
-                if write is not 'OK':
-                    logging.info('FAILED TO WRITE THE FOLLOWING PIDS FOR {0}:'.format(domain) + ''.join(write))
+            if num_cleaned > 0:
+                probs, dupes, writes = self._write_db(cleaned, domain)
+                num_probs = len(probs)
+                num_dupes = len(dupes)
+                num_writes = len(writes)
+                assert num_probs + num_dupes + num_writes == num_cleaned 
+                pct_written = (num_writes) / num_cleaned * 100
+                pct_fail = round(num_probs / num_cleaned * 100,3)
 
+                if num_dupes == num_cleaned:
+                    logging.info('100% OF {0} PIDS ARE DUPES. NOTHING WRITTEN'.format(str.upper(regionName)))
+
+                elif num_writes + num_dupes == num_cleaned:
+                    logging.info('100% OF {0} PIDS WRITTEN.'.format(str.upper(regionName)) + 
+                                 ' {0} scraped, {1} w/ rent/sqft, {2} w/ lat/lon, {3} dupes'.format(
+                                    count_listings, count_thorough, count_geocoded, num_dupes))
+                
+                else:
+                    logging.info('FAILED TO WRITE {0}% OF {1} PIDS:'.format(pct_fail,str.upper(regionName)) + ', '.join(probs))
+
+            else:
+                logging.info('NO CLEAN LISTINGS FOR {0}:'.format(str.upper(regionName)) + 
+                             ' {0} scraped, {1} w/ rent/sqft, {2} w/ lat/lon.'.format(
+                                count_listings, count_thorough, count_geocoded))
 
         return
 

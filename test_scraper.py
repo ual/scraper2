@@ -13,7 +13,7 @@ __date__ = "May 6, 2016"
 
 # add subfolder to system path
 
-domains = ['http://chico.craigslist.org/search/apa','http://redding.craigslist.org/search/apa']
+domains = ['http://boston.craigslist.org/search/aap']
 # with open('domains.txt', 'rb') as f:
 #     for line in f.readlines():
 #         domains.append((line.strip()))
@@ -23,8 +23,8 @@ ts = dt.now().strftime('%Y%m%d-%H%M%S')
 st = time.time()
 s = scraper2.RentalListingScraper(
     domains=domains,
-    earliest_ts=dt.utcnow() - timedelta(hours=lookback),
-    latest_ts=dt.utcnow() + timedelta(hours=0),
+    earliest_ts=dt.now() - timedelta(hours=lookback),
+    latest_ts=dt.now() + timedelta(hours=0),
     fname_ts=ts)
 
 out = s.run()

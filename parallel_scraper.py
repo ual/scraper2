@@ -22,12 +22,12 @@ with open('/home/mgardner/scraper2/domains.txt', 'rb') as f:
     for line in f.readlines():
         domains.append((line.strip()))
 
-# domains = ['http://sfbay.craigslist.org/search/apa']
+# domains = ['http://losangeles.craigslist.org/search/apa']
 
 lookback = 1  # hours
 
-earliest_ts = dt.utcnow() - timedelta(hours=lookback)
-latest_ts = dt.utcnow() + timedelta(hours=0)
+earliest_ts = dt.now() - timedelta(hours=lookback)
+latest_ts = dt.now() + timedelta(hours=0)
 ts = dt.now().strftime('%Y%m%d-%H%M%S')
 
 jobs = []
