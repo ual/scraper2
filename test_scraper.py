@@ -13,7 +13,7 @@ __date__ = "May 6, 2016"
 
 # add subfolder to system path
 
-domains = ['http://boston.craigslist.org/search/aap']
+domains = ['http://sfbay.craigslist.org/search/apa']
 # with open('domains.txt', 'rb') as f:
 #     for line in f.readlines():
 #         domains.append((line.strip()))

@@ -156,12 +156,15 @@ class RentalListingScraper(object):
 
         page = s.get(url, timeout=30)
         tree = html.fromstring(page.content)
-        
+        try:
+            baths = tree.xpath('//p[@class = "attrgroup"]//b')[1].text[:-2]
+        except:
+            baths = ''
         map = tree.xpath('//div[@id="map"]')
 
         # Sometimes there's no location info, and no map on the page        
         if len(map) == 0:
-            return ['', '', '', '']
+            return [baths,'', '', '', '']
 
         map = map[0]
         lat = map.xpath('@data-latitude')[0]
@@ -169,7 +172,7 @@ class RentalListingScraper(object):
         accuracy = map.xpath('@data-accuracy')[0]
         address = self._parseAddress(tree)
         
-        return [lat, lng, accuracy, address]
+        return [baths, lat, lng, accuracy, address]
 
 
     def _get_fips(self, row):
@@ -188,7 +191,8 @@ class RentalListingScraper(object):
         converters = {'neighb':str, 
               'title':str, 
               'price':self._toFloat, 
-              'beds':self._toFloat, 
+              'beds':self._toFloat,
+              'baths':self._toFloat, 
               'pid':str, 
               'dt':str, 
               'url':str, 
@@ -203,7 +207,7 @@ class RentalListingScraper(object):
             return [], 0, 0, 0
         # print('{0} total listings'.format(len(all_listings)))
         all_listings = all_listings.rename(columns={'price':'rent', 'dt':'date', 'beds':'bedrooms', 'neighb':'neighborhood',
-                                                    'lng':'longitude', 'lat':'latitude'})
+                                                    'baths':'bathrooms','lng':'longitude', 'lat':'latitude'})
         all_listings['rent_sqft'] = all_listings['rent'] / all_listings['sqft']
         all_listings['date'] = pd.to_datetime(all_listings['date'], format='%Y-%m-%d')
         all_listings['day_of_week'] = all_listings['date'].apply(lambda x: x.weekday())
@@ -219,7 +223,7 @@ class RentalListingScraper(object):
         geolocated_filtered_listings = pd.DataFrame(thorough_listings)
         geolocated_filtered_listings = geolocated_filtered_listings[pd.notnull(geolocated_filtered_listings['latitude'])]
         geolocated_filtered_listings = geolocated_filtered_listings[pd.notnull(geolocated_filtered_listings['longitude'])]
-        cols = ['pid', 'date', 'region', 'neighborhood', 'rent', 'bedrooms', 'sqft', 'rent_sqft', 
+        cols = ['pid', 'date', 'region', 'neighborhood', 'rent', 'bedrooms', 'sqft', 'rent_sqft', 'bathrooms' 
                 'longitude', 'latitude']
         data_output = geolocated_filtered_listings[cols]
 
@@ -251,7 +255,7 @@ class RentalListingScraper(object):
                                 (row['pid'],row['date'].to_datetime(),row['region'],row['neighborhood'],
                                 row['rent'],row['bedrooms'],row['sqft'],row['rent_sqft'],
                                 row['longitude'],row['latitude'],row['county'],
-                                row['fips_block'],row['state']))
+                                row['fips_block'],row['state'],row['bathrooms']))
                 conn.commit()
                 writes.append(row['pid'])
             except Exception, e:
@@ -267,12 +271,12 @@ class RentalListingScraper(object):
     
     def run(self, charity_proxy=True):
     
-        colnames = ['pid','dt','url','title','price','neighb','beds','sqft',
+        colnames = ['pid','dt','url','title','price','neighb','beds','sqft', 'baths'
                         'lat','lng','accuracy','address']
         st_time = time.time()
 
         # Loop over each regional Craigslist URL
-        for i,domain in enumerate(self.domains):
+        for i, domain in enumerate(self.domains):
 
             total_listings = 0
             listing_num = 0
@@ -331,6 +335,7 @@ class RentalListingScraper(object):
                     
 
                     for item in listings:
+
                         listing_num += 1
                         try:
                             row = self._parseListing(item)
@@ -384,7 +389,7 @@ class RentalListingScraper(object):
                                  str(self.latest_ts)))
                 continue
 
-            # TO DO: exception handling
+
             cleaned, count_listings, count_thorough, count_geocoded = self._clean_listings(fname)
             num_cleaned = len(cleaned)
 
