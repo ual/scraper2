@@ -4,7 +4,7 @@ from datetime import timedelta
 import time
 import sys
 sys.path.insert(0, 'scraper2/')
-import scraper2
+import w_brs
 import csv
 
 __author__ = "Sam Maurer, UrbanSim Inc"
@@ -13,7 +13,7 @@ __date__ = "May 6, 2016"
 
 # add subfolder to system path
 
-domains = ['http://boston.craigslist.org/search/aap']
+domains = ['http://sacramento.craigslist.org/search/apa']
 # with open('domains.txt', 'rb') as f:
 #     for line in f.readlines():
 #         domains.append((line.strip()))
@@ -21,7 +21,7 @@ domains = ['http://boston.craigslist.org/search/aap']
 lookback = 1  # hours
 ts = dt.now().strftime('%Y%m%d-%H%M%S')
 st = time.time()
-s = scraper2.RentalListingScraper(
+s = w_brs.RentalListingScraper(
     domains=domains,
     earliest_ts=dt.now() - timedelta(hours=lookback),
     latest_ts=dt.now() + timedelta(hours=0),

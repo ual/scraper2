@@ -247,11 +247,11 @@ class RentalListingScraper(object):
         for i,row in dataframe.iterrows():
             try:
                 cur.execute('''INSERT INTO rental_listings
-                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
                                 (row['pid'],row['date'].to_datetime(),row['region'],row['neighborhood'],
                                 row['rent'],row['bedrooms'],row['sqft'],row['rent_sqft'],
                                 row['longitude'],row['latitude'],row['county'],
-                                row['fips_block'],row['state']))
+                                row['fips_block'],row['state'],None))
                 conn.commit()
                 writes.append(row['pid'])
             except Exception, e:
