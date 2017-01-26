@@ -157,7 +157,7 @@ class RentalListingScraper(object):
         page = s.get(url, timeout=30)
         tree = html.fromstring(page.content)
         try:
-            baths = tree.xpath('//div[@class="mapAndAttrs"]/p[@class="attrgroup"]/span/b')[1].text[:-2]
+            baths = tree.xpath('//p[@class = "attrgroup"]//b')[1].text[:-2]
         except:
             baths = ''
         map = tree.xpath('//div[@id="map"]')
@@ -223,7 +223,7 @@ class RentalListingScraper(object):
         geolocated_filtered_listings = pd.DataFrame(thorough_listings)
         geolocated_filtered_listings = geolocated_filtered_listings[pd.notnull(geolocated_filtered_listings['latitude'])]
         geolocated_filtered_listings = geolocated_filtered_listings[pd.notnull(geolocated_filtered_listings['longitude'])]
-        cols = ['pid', 'date', 'region', 'neighborhood', 'rent', 'bedrooms', 'sqft', 'rent_sqft', 'bathrooms', 
+        cols = ['pid', 'date', 'region', 'neighborhood', 'rent', 'bedrooms', 'sqft', 'rent_sqft', 'bathrooms' 
                 'longitude', 'latitude']
         data_output = geolocated_filtered_listings[cols]
 
@@ -361,7 +361,7 @@ class RentalListingScraper(object):
 
                             # Parse listing page to get lat-lng
                             logging.info(item_url)
-                            row += self._scrapeLatLng(s, item_url)
+                            row += self._scrapeLatLng(s, item_url) 
                             writer.writerow(row)
 
                         except Exception, e:
