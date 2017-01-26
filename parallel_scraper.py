@@ -11,10 +11,6 @@ import glob
 sys.path.insert(0, '/home/mgardner/scraper2/scraper2')
 import scraper2
 
-
-__author__ = "Sam Maurer, UrbanSim Inc"
-__date__ = "May 6, 2016"
-
 # add subfolder to system path
 
 domains = []
